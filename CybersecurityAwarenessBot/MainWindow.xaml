@@ -40,7 +40,6 @@
 
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
             <Button x:Name="BtnStartQuiz" Style="{StaticResource InteractiveButton}" Content="🎮 Start Quiz" Width="120" Height="35" Margin="0,0,10,0" Background="#FF4CAF50" Click="QuickAction_Click"/>
-            <Button x:Name="BtnAddTask" Style="{StaticResource InteractiveButton}" Content="➕ Add Task" Width="120" Height="35" Margin="0,0,10,0" Background="#FF9C27B0" Click="BtnAddTask_Click"/>
             <Button x:Name="BtnShowTasks" Style="{StaticResource InteractiveButton}" Content="📋 Show Tasks" Width="120" Height="35" Margin="0,0,10,0" Background="#FF2196F3" Click="QuickAction_Click"/>
             <Button x:Name="BtnActivityLog" Style="{StaticResource InteractiveButton}" Content="📜 Activity Log" Width="120" Height="35" Margin="0,0,10,0" Background="#FFFF9800" Click="QuickAction_Click"/>
             <Button x:Name="BtnClearChat" Style="{StaticResource InteractiveButton}" Content="🗑️ Clear Chat" Width="120" Height="35" Background="#FFF44336" Click="BtnClearChat_Click"/>

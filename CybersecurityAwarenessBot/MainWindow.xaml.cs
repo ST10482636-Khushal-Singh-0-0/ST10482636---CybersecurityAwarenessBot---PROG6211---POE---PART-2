@@ -17,7 +17,6 @@ namespace CybersecurityAwarenessBot
             InitializeComponent();
             _bot = new BotEngine();
             DisplayHeader();
-            PlayVoiceGreeting();
             AppendMessage("System", "Welcome to your personalized Cybersecurity Awareness Bot! Please enter your name:");
         }
 
@@ -38,17 +37,6 @@ namespace CybersecurityAwarenessBot
             ChatOutput.Text += guardianArt + "\n===============================================================================\n\n";
         }
 
-        private void PlayVoiceGreeting()
-        {
-            try
-            {
-                SoundPlayer player = new SoundPlayer("greeting.wav");
-                player.LoadAsync();
-                player.Play();
-            }
-            catch (Exception) { /* Fails silently if wav is missing */ }
-        }
-
         private void SendButton_Click(object sender, RoutedEventArgs e) => ProcessInput(UserInputBox.Text);
 
         private void UserInputBox_KeyDown(object sender, KeyEventArgs e)
@@ -63,6 +51,22 @@ namespace CybersecurityAwarenessBot
                 string rawText = clickedButton.Content.ToString() ?? "";
                 ProcessInput(rawText.Substring(3).Trim());
             }
+        }
+
+        // Logic for the Add Task Button
+        private void BtnAddTask_Click(object sender, RoutedEventArgs e)
+        {
+            // Close the task manager so the user can see the bot's prompt
+            TaskDashboardOverlay.Visibility = Visibility.Collapsed;
+            ChatScroll.Visibility = Visibility.Visible;
+
+            // Pre-fill the input box
+            UserInputBox.Text = "remind me to ";
+            UserInputBox.Focus();
+            UserInputBox.CaretIndex = UserInputBox.Text.Length;
+
+            AppendMessage("System", "What would you like me to remind you about?");
+            ChatScroll.ScrollToEnd();
         }
 
         private void BtnClearChat_Click(object sender, RoutedEventArgs e)
@@ -106,7 +110,6 @@ namespace CybersecurityAwarenessBot
             ChatScroll.ScrollToEnd();
         }
 
-        // --- INTERACTIVE TASK DASHBOARD LOGIC ---
         private void ShowInteractiveTasks()
         {
             ChatScroll.Visibility = Visibility.Collapsed;
@@ -117,7 +120,7 @@ namespace CybersecurityAwarenessBot
 
             if (tasks.Count == 0)
             {
-                InteractiveTaskList.Children.Add(new TextBlock { Text = "You have no pending tasks! Great job.", Foreground = Brushes.White, FontSize = 16 });
+                InteractiveTaskList.Children.Add(new TextBlock { Text = "You have no pending tasks!", Foreground = Brushes.White, FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 20, 0, 0) });
                 return;
             }
 
@@ -190,9 +193,8 @@ namespace CybersecurityAwarenessBot
         {
             TaskDashboardOverlay.Visibility = Visibility.Collapsed;
             ChatScroll.Visibility = Visibility.Visible;
-            AppendMessage("Guardian", "Task Manager closed. What's next?");
+            AppendMessage("Guardian", "Task Manager closed.");
         }
-        // ---------------------------------------------
 
         private void UpdateQuizInterface()
         {
