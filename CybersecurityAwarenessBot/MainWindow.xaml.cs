@@ -1,149 +1,349 @@
 ﻿using System;
+using System.Linq;
 using System.Collections.Generic;
-using System.Diagnostics;
-using MySql.Data.MySqlClient;
+using System.Media;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Speech.Synthesis;
 
 namespace CybersecurityAwarenessBot
 {
-    public class UserTaskModel
+    public partial class MainWindow : Window
     {
-        public int TaskId { get; set; }
-        public string Title { get; set; } = string.Empty;
-        public bool IsCompleted { get; set; }
-        public DateTime? ReminderDate { get; set; }
-    }
+        private BotEngine _bot;
+        private bool _isAwaitingName = true;
+        private SpeechSynthesizer _synth;
 
-    public class DatabaseHelper
-    {
-        // IMPORTANT: Add your MySQL password to Pwd= if you have one!
-        private readonly string _connectionString = "Server=localhost;Database=CybersecurityBotDB;Uid=root;Pwd=;";
+        public MainWindow()
+        {
+            InitializeComponent();
+            _bot = new BotEngine();
 
+            // Initialize the Voice Synthesizer
+            _synth = new SpeechSynthesizer();
+            _synth.SetOutputToDefaultAudioDevice();
 
-        // Attempts to add a task. Returns TRUE if successful, FALSE if the DB connection fails.
-        // </summary>
-        public bool AddUserTask(string title, string description, DateTime? reminderDate)
+            DisplayHeader();
+
+            // Play your custom WAV file greeting
+            PlayVoiceGreeting();
+
+            AppendMessage("System", "Welcome to your personalized Cybersecurity Awareness Bot! Please enter your name:");
+        }
+
+        private void SpeakText(string text)
         {
             try
             {
-                using (MySqlConnection conn = new MySqlConnection(_connectionString))
-                {
-                    conn.Open(); // Will immediately throw an exception if MySQL is offline
-                    string query = "INSERT INTO UserTasks (Title, Description, ReminderDate) VALUES (@Title, @Description, @ReminderDate)";
+                // Clean up emojis and symbols so the bot doesn't literally read them out loud
+                string cleanText = text.Replace("✅", "").Replace("❌", "").Replace("🎮", "").Replace("📋", "").Replace("📜", "").Replace("🗑️", "").Replace("➕", "").Replace("*", "").Replace("⏳", "");
 
-                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
-                    {
-                        cmd.Parameters.AddWithValue("@Title", title);
-                        cmd.Parameters.AddWithValue("@Description", description ?? string.Empty);
-                        cmd.Parameters.AddWithValue("@ReminderDate", reminderDate.HasValue ? (object)reminderDate.Value : DBNull.Value);
-
-                        int rowsAffected = cmd.ExecuteNonQuery();
-                        return rowsAffected > 0; // Ensures the row was actually written
-                    }
-                }
+                _synth.SpeakAsyncCancelAll();
+                _synth.SpeakAsync(cleanText);
             }
-            catch (MySqlException sqlEx)
+            catch
             {
-                Debug.WriteLine($"[MySQL Specific Error]: {sqlEx.Message}");
-                return false;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[General DB Error]: {ex.Message}");
-                return false;
+                // Fails silently if the computer has no speakers plugged in
             }
         }
 
-
-        // Retrieves tasks. If the DB is offline, safely returns an empty list so the app doesn't crash.
-        // </summary>
-        public List<UserTaskModel> GetTaskModels()
+        private void DisplayHeader()
         {
-            List<UserTaskModel> tasks = new List<UserTaskModel>();
+            string guardianArt = @"
+ _______    __   __     _____    _______   ______    _________    _____    ___   __
+/ _____ \  | |   | |   / ___ \   | ___  \  | ___ \   |___  __|   / ___ \   |   \ | |
+| |        | |   | |  / /   \ \  | |  | |  | |  \ |     | |     / /   \ \  | |\ \| |
+| | _____  | |   | |  | |___| |  | |__| |  | |  | |     | |     | |___| |  | | \ \ |
+| | |__ |  | |   | |  | _____ |  | __  /   | |  | |     | |     | _____ |  | |  \ \|
+| |   | |  | |   | |  | |   | |  | | \ \   | |  | |     | |     | |   | |  | |   | |
+| |___| |  | |___| |  | |   | |  | |  | |  | |__/ |   __| |___  | |   | |  | |   | |
+\_______/  \_______/  |_|   |_|  |_|  |_|  |_____/   |_______|  |_|   |_|  |_|   |_|
+                                                  
+                +++ CYBERSECURITY AWARENESS ASSISTANT +++
+";
+            ChatOutput.Text += guardianArt + "\n===============================================================================\n\n";
+        }
+
+        private void PlayVoiceGreeting()
+        {
             try
             {
-                using (MySqlConnection conn = new MySqlConnection(_connectionString))
-                {
-                    conn.Open();
-                    string query = "SELECT TaskId, Title, ReminderDate, IsCompleted FROM UserTasks ORDER BY TaskId ASC";
+                SoundPlayer player = new SoundPlayer("greeting.wav");
+                player.LoadAsync();
+                player.Play();
+            }
+            catch (Exception) { /* Fails silently if wav is missing */ }
+        }
 
-                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
-                    using (MySqlDataReader reader = cmd.ExecuteReader())
+        private void SendButton_Click(object sender, RoutedEventArgs e) => ProcessInput(UserInputBox.Text);
+
+        private void UserInputBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter) ProcessInput(UserInputBox.Text);
+        }
+
+        private void QuickAction_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button clickedButton)
+            {
+                string rawText = clickedButton.Content?.ToString() ?? "";
+                ProcessInput(rawText.Trim());
+            }
+        }
+
+        private void BtnAddTask_Click(object sender, RoutedEventArgs e)
+        {
+            TaskDashboardOverlay.Visibility = Visibility.Collapsed;
+            ChatScroll.Visibility = Visibility.Visible;
+
+            UserInputBox.Text = "remind me to ";
+            UserInputBox.Focus();
+            UserInputBox.CaretIndex = UserInputBox.Text.Length;
+
+            string msg = "What would you like me to remind you about?";
+            AppendMessage("System", msg);
+            SpeakText(msg);
+            ChatScroll.ScrollToEnd();
+        }
+
+        private void BtnClearChat_Click(object sender, RoutedEventArgs e)
+        {
+            ChatOutput.Text = string.Empty;
+            DisplayHeader();
+
+            string msg = "Chat history cleared.";
+            AppendMessage("System", msg);
+            SpeakText(msg);
+        }
+
+        private void ProcessInput(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input) && !_bot.IsQuizActive) return;
+
+            if (!_bot.IsQuizActive)
+            {
+                AppendMessage(_isAwaitingName ? "User" : _bot.UserName, input);
+                UserInputBox.Clear();
+            }
+
+            if (_isAwaitingName)
+            {
+                _bot.UserName = input.Trim();
+                _isAwaitingName = false;
+
+                string greeting = $"Hello, {_bot.UserName}! I am ready to help.";
+                AppendMessage("Guardian", greeting);
+                SpeakText(greeting);
+            }
+            else
+            {
+                string response = _bot.ProcessInput(input);
+
+                if (response == "[DISPLAY_TASKS]")
+                {
+                    ShowInteractiveTasks();
+                    SpeakText("Opening your interactive task manager.");
+                }
+                else
+                {
+                    AppendMessage("Guardian", response);
+                    SpeakText(response);
+                }
+
+                UpdateQuizInterface();
+            }
+            ChatScroll.ScrollToEnd();
+        }
+
+        private void ShowInteractiveTasks()
+        {
+            ChatScroll.Visibility = Visibility.Collapsed;
+            TaskDashboardOverlay.Visibility = Visibility.Visible;
+            InteractiveTaskList.Children.Clear();
+
+            var tasks = _bot.GetUserTasks();
+
+            // <-- NEW: Apply highlights to the calendar based on our task list
+            RefreshCalendarHighlights(tasks);
+
+            if (tasks.Count == 0)
+            {
+                InteractiveTaskList.Children.Add(new TextBlock { Text = "You have no pending tasks!", Foreground = Brushes.White, FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 20, 0, 0) });
+                return;
+            }
+
+            foreach (var task in tasks)
+            {
+                Border taskCard = new Border
+                {
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#444444")),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(15),
+                    Margin = new Thickness(0, 0, 0, 10)
+                };
+
+                Grid taskGrid = new Grid();
+                taskGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                taskGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                string statusIcon = task.IsCompleted ? "✅" : "⏳";
+                string dateText = task.ReminderDate.HasValue ? $" (Due: {task.ReminderDate.Value.ToShortDateString()})" : "";
+
+                TextBlock txtTitle = new TextBlock
+                {
+                    Text = $"{statusIcon} {task.Title}{dateText}",
+                    Foreground = Brushes.White,
+                    FontSize = 16,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextDecorations = task.IsCompleted ? TextDecorations.Strikethrough : null
+                };
+                Grid.SetColumn(txtTitle, 0);
+                taskGrid.Children.Add(txtTitle);
+
+                StackPanel btnPanel = new StackPanel { Orientation = Orientation.Horizontal };
+                Grid.SetColumn(btnPanel, 1);
+
+                if (!task.IsCompleted)
+                {
+                    Button btnComplete = new Button
                     {
-                        while (reader.Read())
+                        Content = "Complete",
+                        Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4CAF50")),
+                        Margin = new Thickness(0, 0, 10, 0),
+                        Style = (Style)FindResource("InteractiveButton")
+                    };
+                    btnComplete.Click += delegate {
+                        _bot.CompleteTask(task.TaskId);
+                        ShowInteractiveTasks();
+                        SpeakText("Task completed.");
+                    };
+                    btnPanel.Children.Add(btnComplete);
+                }
+
+                Button btnDelete = new Button
+                {
+                    Content = "Delete",
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F44336")),
+                    Style = (Style)FindResource("InteractiveButton")
+                };
+                btnDelete.Click += delegate {
+                    _bot.DeleteTask(task.TaskId);
+                    ShowInteractiveTasks();
+                    SpeakText("Task deleted.");
+                };
+                btnPanel.Children.Add(btnDelete);
+
+                taskGrid.Children.Add(btnPanel);
+                taskCard.Child = taskGrid;
+                InteractiveTaskList.Children.Add(taskCard);
+            }
+        }
+
+        private void CloseTaskDashboard_Click(object sender, RoutedEventArgs e)
+        {
+            TaskDashboardOverlay.Visibility = Visibility.Collapsed;
+            ChatScroll.Visibility = Visibility.Visible;
+
+            string msg = "Task Manager closed.";
+            AppendMessage("Guardian", msg);
+            SpeakText(msg);
+        }
+
+        private void UpdateQuizInterface()
+        {
+            QuizAnswersPanel.Children.Clear();
+            if (_bot.IsQuizActive)
+            {
+                UserInputBox.IsEnabled = false;
+                SendButton.IsEnabled = false;
+                QuizAnswersPanel.Visibility = Visibility.Visible;
+
+                var currentQuestion = _bot.GetCurrentQuizQuestion();
+                if (currentQuestion != null)
+                {
+                    foreach (var option in currentQuestion.Options)
+                    {
+                        Button optionButton = new Button
                         {
-                            tasks.Add(new UserTaskModel
-                            {
-                                TaskId = Convert.ToInt32(reader["TaskId"]),
-                                Title = reader["Title"].ToString() ?? "Unknown",
-                                IsCompleted = Convert.ToBoolean(reader["IsCompleted"]),
-                                ReminderDate = reader["ReminderDate"] != DBNull.Value ? Convert.ToDateTime(reader["ReminderDate"]) : (DateTime?)null
-                            });
-                        }
+                            Content = option,
+                            Height = 40,
+                            Margin = new Thickness(5),
+                            Background = Brushes.DarkSlateGray,
+                            Style = (Style)FindResource("InteractiveButton")
+                        };
+                        optionButton.Click += (s, e) => ProcessInput(option);
+                        QuizAnswersPanel.Children.Add(optionButton);
                     }
                 }
             }
-            catch (MySqlException sqlEx)
+            else
             {
-                Debug.WriteLine($"[MySQL Sync Error]: {sqlEx.Message}");
+                UserInputBox.IsEnabled = true;
+                SendButton.IsEnabled = true;
+                QuizAnswersPanel.Visibility = Visibility.Collapsed;
             }
-            return tasks; // Returns empty list on failure
         }
 
-
-        // Updates a task. Returns TRUE if successful.
-        // </summary>
-        public bool MarkTaskCompleteById(int taskId)
+        // <-- NEW: Highlights pending tasks natively by hijacking the SelectedDates collection
+        private void RefreshCalendarHighlights(List<UserTaskModel> tasks = null)
         {
-            try
+            if (tasks == null) tasks = _bot.GetUserTasks();
+
+            // Temporarily detach the event to avoid infinite loops when we change selections programmatically
+            TaskCalendar.SelectedDatesChanged -= TaskCalendar_SelectedDatesChanged;
+
+            TaskCalendar.SelectedDates.Clear();
+
+            foreach (var task in tasks)
             {
-                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                // Only highlight tasks that are pending and have a valid date attached
+                if (!task.IsCompleted && task.ReminderDate.HasValue)
                 {
-                    conn.Open();
-                    string query = "UPDATE UserTasks SET IsCompleted = TRUE WHERE TaskId = @TaskId";
-                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
+                    try
                     {
-                        cmd.Parameters.AddWithValue("@TaskId", taskId);
-                        int rows = cmd.ExecuteNonQuery();
-                        return rows > 0;
+                        TaskCalendar.SelectedDates.Add(task.ReminderDate.Value.Date);
                     }
+                    catch { /* Ignore if the date is out of the calendar's visible bounds */ }
                 }
             }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[DB Update Error]: {ex.Message}");
-                return false;
-            }
+
+            // Reattach the event handler once we are done
+            TaskCalendar.SelectedDatesChanged += TaskCalendar_SelectedDatesChanged;
         }
 
-
-        // Deletes a task. Returns TRUE if successful.
-        // </summary>
-        public bool DeleteTaskById(int taskId)
+        // <-- UPDATED: Handles clicking on the calendar to see task details
+        private void TaskCalendar_SelectedDatesChanged(object sender, SelectionChangedEventArgs e)
         {
-            try
+            if (TaskCalendar.SelectedDate.HasValue)
             {
-                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                DateTime selectedDate = TaskCalendar.SelectedDate.Value.Date;
+
+                // Query the database array for tasks matching the exact day clicked
+                var tasks = _bot.GetUserTasks()
+                                .Where(t => t.ReminderDate.HasValue && t.ReminderDate.Value.Date == selectedDate)
+                                .ToList();
+
+                if (tasks.Any())
                 {
-                    conn.Open();
-                    string query = "DELETE FROM UserTasks WHERE TaskId = @TaskId";
-                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
+                    string details = $"Reminders for {selectedDate.ToShortDateString()}:\n\n";
+                    foreach (var t in tasks)
                     {
-                        cmd.Parameters.AddWithValue("@TaskId", taskId);
-                        int rows = cmd.ExecuteNonQuery();
-                        return rows > 0;
+                        string status = t.IsCompleted ? "✅" : "⏳";
+                        details += $"{status} {t.Title}\n";
                     }
+
+                    // Speak and show the popup box
+                    SpeakText($"You have {tasks.Count} reminder{(tasks.Count > 1 ? "s" : "")} on {selectedDate.ToString("MMMM dth")}.");
+                    MessageBox.Show(details, "Scheduled Events", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[DB Delete Error]: {ex.Message}");
-                return false;
-            }
+
+            // Immediately restore the original task highlights so the user's click doesn't wipe them out
+            RefreshCalendarHighlights();
         }
 
-        // Legacy Fallbacks
-        public List<string> GetAllTasks() { return new List<string>(); }
-        public bool MarkTaskAsCompleted(string searchTitle) { return false; }
-        public bool MarkTaskCompleteByListNumber(int listNumber) { return false; }
+        private void AppendMessage(string sender, string message) => ChatOutput.Text += $"[{sender.ToUpper()}]: {message}\n\n";
     }
 }
