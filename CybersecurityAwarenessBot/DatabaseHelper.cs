@@ -1,68 +1,67 @@
 ﻿using System;
 using System.Collections.Generic;
-using MySql.Data.MySqlClient; // Requires MySql.Data NuGet package
+using System.Diagnostics;
+using MySql.Data.MySqlClient;
 
 namespace CybersecurityAwarenessBot
 {
-
-    // A structured model representing a single task. 
-    // This allows the UI to easily bind to and display task properties.
-
     public class UserTaskModel
     {
         public int TaskId { get; set; }
-        // Initialized with string.Empty to prevent null reference warnings in C# 10+
         public string Title { get; set; } = string.Empty;
         public bool IsCompleted { get; set; }
         public DateTime? ReminderDate { get; set; }
     }
 
-
-    // Handles all external database communications (CRUD Operations).
-
     public class DatabaseHelper
     {
-        // IMPORTANT: Ensure MySQL is running on localhost (e.g., via XAMPP) 
-        // and 'CybersecurityBotDB' is created. Add your password to 'Pwd=' if configured.
+        // IMPORTANT: Add your MySQL password to Pwd= if you have one!
         private readonly string _connectionString = "Server=localhost;Database=CybersecurityBotDB;Uid=root;Pwd=;";
 
-    
-        // Inserts a new task into the database. Uses Parameterized queries to prevent SQL Injection attacks.
-    
-        public void AddUserTask(string title, string description, DateTime? reminderDate)
+        /// <summary>
+        /// Attempts to add a task. Returns TRUE if successful, FALSE if the DB connection fails.
+        /// </summary>
+        public bool AddUserTask(string title, string description, DateTime? reminderDate)
         {
-            // The 'using' statement ensures the connection is automatically closed and disposed of after execution
-            using (MySqlConnection conn = new MySqlConnection(_connectionString))
+            try
             {
-                try
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
-                    conn.Open();
+                    conn.Open(); // Will immediately throw an exception if MySQL is offline
                     string query = "INSERT INTO UserTasks (Title, Description, ReminderDate) VALUES (@Title, @Description, @ReminderDate)";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
-                        // Safely binding parameters
                         cmd.Parameters.AddWithValue("@Title", title);
-                        cmd.Parameters.AddWithValue("@Description", description);
-                        // Handle potential null dates appropriately for MySQL
+                        cmd.Parameters.AddWithValue("@Description", description ?? string.Empty);
                         cmd.Parameters.AddWithValue("@ReminderDate", reminderDate.HasValue ? (object)reminderDate.Value : DBNull.Value);
 
-                        cmd.ExecuteNonQuery(); // Executes the INSERT command
+                        int rowsAffected = cmd.ExecuteNonQuery();
+                        return rowsAffected > 0; // Ensures the row was actually written
                     }
                 }
-                catch (Exception ex) { Console.WriteLine($"DB Error: {ex.Message}"); }
+            }
+            catch (MySqlException sqlEx)
+            {
+                Debug.WriteLine($"[MySQL Specific Error]: {sqlEx.Message}");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[General DB Error]: {ex.Message}");
+                return false;
             }
         }
 
-    
-        // Retrieves all tasks from the database and maps them to UserTaskModel objects.
-    
+        /// <summary>
+        /// Retrieves tasks. If the DB is offline, safely returns an empty list so the app doesn't crash.
+        /// </summary>
         public List<UserTaskModel> GetTaskModels()
         {
             List<UserTaskModel> tasks = new List<UserTaskModel>();
-            using (MySqlConnection conn = new MySqlConnection(_connectionString))
+            try
             {
-                try
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
                     string query = "SELECT TaskId, Title, ReminderDate, IsCompleted FROM UserTasks ORDER BY TaskId ASC";
@@ -70,7 +69,6 @@ namespace CybersecurityAwarenessBot
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     using (MySqlDataReader reader = cmd.ExecuteReader())
                     {
-                        // Loop through result set and construct model objects
                         while (reader.Read())
                         {
                             tasks.Add(new UserTaskModel
@@ -83,54 +81,67 @@ namespace CybersecurityAwarenessBot
                         }
                     }
                 }
-                catch (Exception ex) { Console.WriteLine($"DB Error: {ex.Message}"); }
             }
-            return tasks;
+            catch (MySqlException sqlEx)
+            {
+                Debug.WriteLine($"[MySQL Sync Error]: {sqlEx.Message}");
+            }
+            return tasks; // Returns empty list on failure
         }
 
-    
-        // Updates a specific task's status to Completed based on its exact ID.
-    
-        public void MarkTaskCompleteById(int taskId)
+        /// <summary>
+        /// Updates a task. Returns TRUE if successful.
+        /// </summary>
+        public bool MarkTaskCompleteById(int taskId)
         {
-            using (MySqlConnection conn = new MySqlConnection(_connectionString))
+            try
             {
-                try
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
                     string query = "UPDATE UserTasks SET IsCompleted = TRUE WHERE TaskId = @TaskId";
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
                         cmd.Parameters.AddWithValue("@TaskId", taskId);
-                        cmd.ExecuteNonQuery();
+                        int rows = cmd.ExecuteNonQuery();
+                        return rows > 0;
                     }
                 }
-                catch (Exception ex) { Console.WriteLine($"DB Error: {ex.Message}"); }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[DB Update Error]: {ex.Message}");
+                return false;
             }
         }
 
-    
-        // Permanently removes a task from the database based on its exact ID.
-    
-        public void DeleteTaskById(int taskId)
+        /// <summary>
+        /// Deletes a task. Returns TRUE if successful.
+        /// </summary>
+        public bool DeleteTaskById(int taskId)
         {
-            using (MySqlConnection conn = new MySqlConnection(_connectionString))
+            try
             {
-                try
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
                     string query = "DELETE FROM UserTasks WHERE TaskId = @TaskId";
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
                         cmd.Parameters.AddWithValue("@TaskId", taskId);
-                        cmd.ExecuteNonQuery();
+                        int rows = cmd.ExecuteNonQuery();
+                        return rows > 0;
                     }
                 }
-                catch (Exception ex) { Console.WriteLine($"DB Error: {ex.Message}"); }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[DB Delete Error]: {ex.Message}");
+                return false;
             }
         }
 
-        // Legacy support methods (Maintained in case older text-based command logic is required)
+        // Legacy Fallbacks
         public List<string> GetAllTasks() { return new List<string>(); }
         public bool MarkTaskAsCompleted(string searchTitle) { return false; }
         public bool MarkTaskCompleteByListNumber(int listNumber) { return false; }
